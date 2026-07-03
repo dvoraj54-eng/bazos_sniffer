@@ -66,14 +66,18 @@ Edit the constants near the top of `scraper.py`:
 MIN_PRICE_CZK = 15_000   # floor price in Kč (filters out parts-only/junk ads)
 MAX_PRICE_CZK = 30_000   # ceiling price in Kč
 MIN_KW = 80               # minimum power, only enforced when detectable
-TARGET_HITS = 20          # keep scanning deeper pages until this many matches are found
+TARGET_HITS = 20          # keep scanning until this many *power-mentioned* matches are found
 MAX_PAGES = 150           # hard safety cap (150 pages ≈ 3000 ads) in case matches are rare
 ```
 
-The scan now stops as soon as it finds `TARGET_HITS` matching ads, rather
-than scanning a fixed number of pages every time. On a day with lots of
-matches near the top it'll be a short, fast run; on a slow day it'll dig
-deeper (up to `MAX_PAGES`) to try to reach 20 hits. If it hits the
+The scan now stops as soon as it finds `TARGET_HITS` ads that have a
+detected power figure (kW/PS mentioned in the text), rather than
+scanning a fixed number of pages every time. Ads with STK+price match
+but no detectable power figure are still collected and shown in their
+own "power unknown" section — they just don't count toward the target.
+On a day with lots of power-labeled matches near the top it'll be a
+short, fast run; on a slow day it'll dig deeper (up to `MAX_PAGES`) to
+try to reach 20. If it hits the
 `MAX_PAGES` cap without reaching the target, the Action log will say so
 — that's a signal the filters are tight relative to what's currently
 listed, not a bug.

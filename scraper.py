@@ -49,7 +49,9 @@ from bs4 import BeautifulSoup
 MIN_PRICE_CZK = 15_000
 MAX_PRICE_CZK = 30_000
 MIN_KW = 80
-TARGET_HITS = 20  # keep scanning deeper pages until we find this many matches
+TARGET_HITS = 20  # keep scanning deeper pages until we find this many
+                   # matches WITH a detected power figure (power-unknown
+                   # matches are still kept/shown, just don't count here)
 MAX_PAGES = 150  # hard safety cap (150 pages = ~3000 ads) so a filter-starved
                   # day can't turn into an unbounded scan
 BASE_URL = "https://auto.bazos.cz"
@@ -152,9 +154,14 @@ def evaluate_listing(item):
 
 def scan_and_filter():
     """Scan pages one at a time, filtering as we go, and stop once we
-    reach TARGET_HITS matches or hit the MAX_PAGES safety cap or run
-    out of listings entirely."""
+    reach TARGET_HITS matches WITH a detected power figure, or hit the
+    MAX_PAGES safety cap, or run out of listings entirely.
+
+    Power-unknown matches are still collected and shown (in their own
+    section), they just don't count toward the target -- the target is
+    specifically about getting enough power-confirmed candidates."""
     matches = []
+    known_kw_count = 0
     pages_scanned = 0
     ads_scanned = 0
 
@@ -177,20 +184,26 @@ def scan_and_filter():
             match = evaluate_listing(item)
             if match:
                 matches.append(match)
+                if match["kw"] is not None:
+                    known_kw_count += 1
 
         print(
             f"Page {pages_scanned} (offset {offset}): "
-            f"{ads_scanned} ads scanned so far, {len(matches)} matches so far"
+            f"{ads_scanned} ads scanned so far, {len(matches)} matches "
+            f"({known_kw_count} with power mentioned)"
         )
 
-        if len(matches) >= TARGET_HITS:
-            print(f"Reached target of {TARGET_HITS} matches, stopping.")
+        if known_kw_count >= TARGET_HITS:
+            print(f"Reached target of {TARGET_HITS} power-mentioned matches, stopping.")
             break
 
         time.sleep(1)  # be polite to their server
 
     if pages_scanned >= MAX_PAGES:
-        print(f"Hit MAX_PAGES safety cap ({MAX_PAGES}) before reaching target hits.")
+        print(
+            f"Hit MAX_PAGES safety cap ({MAX_PAGES}) with only {known_kw_count} "
+            f"power-mentioned matches (target was {TARGET_HITS})."
+        )
 
     return matches, ads_scanned
 
