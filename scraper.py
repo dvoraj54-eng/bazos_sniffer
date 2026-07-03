@@ -207,21 +207,37 @@ def save_seen(seen_urls):
 
 
 def render_html(results, new_urls):
-    results.sort(key=lambda x: (x["kw"] is None, -(x["kw"] or 0)))
-    rows = []
-    for r in results:
+    known = sorted(
+        [r for r in results if r["kw"] is not None],
+        key=lambda x: -x["kw"],
+    )
+    unknown = [r for r in results if r["kw"] is None]
+
+    def render_card(r):
         badge = "🆕 " if r["url"] in new_urls else ""
         kw_text = f"{r['kw']} kW" if r["kw"] else "power unknown — check ad"
         title_safe = (
             r["title"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         )
-        rows.append(
-            f"""
+        return f"""
         <div class="card">
           <h3>{badge}<a href="{r['url']}" target="_blank" rel="noopener">{title_safe}</a></h3>
           <p>{r['price']:,} Kč &middot; {kw_text} &middot; STK mentioned</p>
         </div>"""
+
+    sections = ""
+    if known:
+        sections += (
+            '<h2 class="section">✅ Power figure mentioned</h2>'
+            + "".join(render_card(r) for r in known)
         )
+    if unknown:
+        sections += (
+            '<h2 class="section">❔ Power unknown — check ad</h2>'
+            + "".join(render_card(r) for r in unknown)
+        )
+    if not results:
+        sections = "<p>No matches this run.</p>"
 
     html = f"""<!DOCTYPE html>
 <html lang="cs">
@@ -233,6 +249,7 @@ def render_html(results, new_urls):
   body {{ font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; background:#111; color:#eee; }}
   .card {{ border: 1px solid #333; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
   .card h3 {{ margin: 0 0 0.4rem 0; }}
+  .section {{ margin-top: 2rem; margin-bottom: 1rem; border-bottom: 1px solid #333; padding-bottom: 0.4rem; font-size: 1.1rem; color: #ccc; }}
   a {{ color: #6db3ff; }}
   .meta {{ color: #999; font-size: 0.9rem; }}
 </style>
@@ -240,7 +257,7 @@ def render_html(results, new_urls):
 <body>
   <h1>🏁 Bazos.cz track-car scan</h1>
   <p class="meta">Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} &middot; {len(results)} matches, {MIN_PRICE_CZK:,}&ndash;{MAX_PRICE_CZK:,} Kč, {MIN_KW}kW+ (where detectable)</p>
-  {''.join(rows) if rows else '<p>No matches this run.</p>'}
+  {sections}
 </body>
 </html>"""
     OUTPUT_HTML.parent.mkdir(parents=True, exist_ok=True)
