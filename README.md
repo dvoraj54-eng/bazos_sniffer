@@ -63,10 +63,20 @@ After that, it runs itself every morning.
 Edit the constants near the top of `scraper.py`:
 
 ```python
+MIN_PRICE_CZK = 15_000   # floor price in Kč (filters out parts-only/junk ads)
 MAX_PRICE_CZK = 30_000   # ceiling price in Kč
 MIN_KW = 80               # minimum power, only enforced when detectable
-MAX_PAGES = 15            # how many listing pages (20 ads each) to scan per run
+TARGET_HITS = 20          # keep scanning deeper pages until this many matches are found
+MAX_PAGES = 150           # hard safety cap (150 pages ≈ 3000 ads) in case matches are rare
 ```
+
+The scan now stops as soon as it finds `TARGET_HITS` matching ads, rather
+than scanning a fixed number of pages every time. On a day with lots of
+matches near the top it'll be a short, fast run; on a slow day it'll dig
+deeper (up to `MAX_PAGES`) to try to reach 20 hits. If it hits the
+`MAX_PAGES` cap without reaching the target, the Action log will say so
+— that's a signal the filters are tight relative to what's currently
+listed, not a bug.
 
 Commit the change — the next scheduled run (or a manual "Run workflow")
 picks it up.
@@ -78,11 +88,15 @@ picks it up.
   patterns like "80kW" or "STK" in the ad text. It will miss ads that
   phrase things unusually, and "STK mentioned" just means the word
   appears — it doesn't confirm validity dates. Always click through.
-- **Only scans the newest ~300 ads/day** (`MAX_PAGES × 20`). Bazos has
-  no way to filter by price server-side reliably, so very cheap ads
-  buried deep in older listings on a single run might be missed if the
-  day was unusually busy. Raise `MAX_PAGES` if you want deeper coverage
-  (slower runs, more requests).
+- **Scans until it finds 20 matches, or gives up after ~3000 ads.**
+  It no longer scans a fixed number of pages — it keeps going deeper
+  into the listings until it hits `TARGET_HITS` matches or the
+  `MAX_PAGES` safety cap, whichever comes first. This means run time
+  varies day to day: a run with lots of early matches finishes fast, a
+  run with few matches takes longer and makes more requests. If it hits
+  the safety cap without reaching 20 matches, that's expected on days
+  when very little in your price/power range has been posted recently
+  — not a sign something's broken.
 - **No email delivery yet.** This publishes to a GitHub Pages URL you
   check manually. If you want it emailed instead, say so — it's a
   small addition (GitHub Action step using SMTP + a secret for

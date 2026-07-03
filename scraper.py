@@ -27,7 +27,8 @@ once locally first:
     pip install requests beautifulsoup4
     python scraper.py
 
-Then check the printed "Fetched N raw listings" line.
+Then check the printed output after the first page — it looks like
+"Page 1 (offset 0): N ads scanned so far, M matches so far".
   - If N > 0, you're good, no changes needed.
   - If N == 0, open https://auto.bazos.cz/ in your browser, right-click
     an ad card -> Inspect, and find the repeating wrapper <div> class
@@ -45,9 +46,12 @@ import requests
 from bs4 import BeautifulSoup
 
 # ---- CONFIG -------------------------------------------------------------
+MIN_PRICE_CZK = 15_000
 MAX_PRICE_CZK = 30_000
 MIN_KW = 80
-MAX_PAGES = 15  # 20 listings/page -> scans ~300 newest ads per run
+TARGET_HITS = 20  # keep scanning deeper pages until we find this many matches
+MAX_PAGES = 150  # hard safety cap (150 pages = ~3000 ads) so a filter-starved
+                  # day can't turn into an unbounded scan
 BASE_URL = "https://auto.bazos.cz"
 SEEN_FILE = Path("data/seen.json")
 OUTPUT_HTML = Path("docs/index.html")
@@ -126,8 +130,31 @@ def has_stk_mention(text: str) -> bool:
     return bool(STK_RE.search(text))
 
 
-def scrape_all():
-    all_listings = []
+def evaluate_listing(item):
+    """Return the item enriched with parsed fields if it passes the
+    filters, otherwise None."""
+    price = extract_price(item["raw_text"])
+    if price is None or price < MIN_PRICE_CZK or price > MAX_PRICE_CZK:
+        return None
+    kw = extract_kw(item["raw_text"])
+    # Drop only if power WAS detected and is below threshold.
+    # If power is unknown, keep it and flag it -- let Jan judge.
+    if kw is not None and kw < MIN_KW:
+        return None
+    item["price"] = price
+    item["kw"] = kw
+    item["stk_mentioned"] = has_stk_mention(item["raw_text"])
+    return item
+
+
+def scan_and_filter():
+    """Scan pages one at a time, filtering as we go, and stop once we
+    reach TARGET_HITS matches or hit the MAX_PAGES safety cap or run
+    out of listings entirely."""
+    matches = []
+    pages_scanned = 0
+    ads_scanned = 0
+
     for i in range(MAX_PAGES):
         offset = i * 20
         try:
@@ -135,30 +162,34 @@ def scrape_all():
         except requests.RequestException as e:
             print(f"Failed to fetch offset {offset}: {e}")
             break
+
         listings = parse_listings(html)
         if not listings:
+            print(f"No more listings at offset {offset}, stopping.")
             break
-        all_listings.extend(listings)
+
+        pages_scanned += 1
+        ads_scanned += len(listings)
+        for item in listings:
+            match = evaluate_listing(item)
+            if match:
+                matches.append(match)
+
+        print(
+            f"Page {pages_scanned} (offset {offset}): "
+            f"{ads_scanned} ads scanned so far, {len(matches)} matches so far"
+        )
+
+        if len(matches) >= TARGET_HITS:
+            print(f"Reached target of {TARGET_HITS} matches, stopping.")
+            break
+
         time.sleep(1)  # be polite to their server
-    return all_listings
 
+    if pages_scanned >= MAX_PAGES:
+        print(f"Hit MAX_PAGES safety cap ({MAX_PAGES}) before reaching target hits.")
 
-def filter_listings(listings):
-    results = []
-    for item in listings:
-        price = extract_price(item["raw_text"])
-        if price is None or price > MAX_PRICE_CZK:
-            continue
-        kw = extract_kw(item["raw_text"])
-        item["price"] = price
-        item["kw"] = kw
-        item["stk_mentioned"] = has_stk_mention(item["raw_text"])
-        # Drop only if power WAS detected and is below threshold.
-        # If power is unknown, keep it and flag it -- let Jan judge.
-        if kw is not None and kw < MIN_KW:
-            continue
-        results.append(item)
-    return results
+    return matches, ads_scanned
 
 
 def load_seen():
@@ -206,7 +237,7 @@ def render_html(results, new_urls):
 </head>
 <body>
   <h1>🏁 Bazos.cz track-car scan</h1>
-  <p class="meta">Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} &middot; {len(results)} matches under {MAX_PRICE_CZK:,} Kč, {MIN_KW}kW+ (where detectable)</p>
+  <p class="meta">Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} &middot; {len(results)} matches, {MIN_PRICE_CZK:,}&ndash;{MAX_PRICE_CZK:,} Kč, {MIN_KW}kW+ (where detectable)</p>
   {''.join(rows) if rows else '<p>No matches this run.</p>'}
 </body>
 </html>"""
@@ -215,10 +246,8 @@ def render_html(results, new_urls):
 
 
 def main():
-    listings = scrape_all()
-    print(f"Fetched {len(listings)} raw listings")
-    results = filter_listings(listings)
-    print(f"{len(results)} matched filters")
+    results, ads_scanned = scan_and_filter()
+    print(f"Scanned {ads_scanned} raw listings, {len(results)} matched filters")
 
     seen = load_seen()
     current_urls = {r["url"] for r in results}
