@@ -5,6 +5,14 @@ on:
     # 06:00 UTC = 08:00 Prague time in winter (CET), 07:00 in summer (CEST)
     - cron: "0 6 * * *"
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    # Skip re-running when the ONLY thing that changed is the scan's own
+    # output -- avoids the scanner re-triggering itself over and over
+    # after it commits docs/index.html + data/seen.json.
+    paths-ignore:
+      - "docs/index.html"
+      - "data/seen.json"
 
 permissions:
   contents: write
