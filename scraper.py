@@ -5,9 +5,9 @@ Bazos.cz cheap track-car scanner.
 Scans auto.bazos.cz listings and keeps the ones that look like cheap,
 light, powerful (or formerly powerful/sporty) budget-racing candidates:
 
-  - price <= MAX_PRICE_CZK
+  - price between MIN_PRICE_CZK and MAX_PRICE_CZK
   - power >= MIN_KW, where detectable from the free-text ad (kW or PS)
-  - flags whether STK (technical inspection) is mentioned at all
+  - STK (technical inspection) must be mentioned in the ad text
 
 Bazos doesn't expose power/mileage/year as search filters, so this pulls
 the raw listing pages and does all filtering itself via regex on the ad
@@ -143,7 +143,10 @@ def evaluate_listing(item):
         return None
     item["price"] = price
     item["kw"] = kw
-    item["stk_mentioned"] = has_stk_mention(item["raw_text"])
+    stk_mentioned = has_stk_mention(item["raw_text"])
+    if not stk_mentioned:
+        return None
+    item["stk_mentioned"] = stk_mentioned
     return item
 
 
@@ -209,7 +212,6 @@ def render_html(results, new_urls):
     for r in results:
         badge = "🆕 " if r["url"] in new_urls else ""
         kw_text = f"{r['kw']} kW" if r["kw"] else "power unknown — check ad"
-        stk_text = "STK mentioned" if r["stk_mentioned"] else "⚠️ no STK mention"
         title_safe = (
             r["title"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         )
@@ -217,7 +219,7 @@ def render_html(results, new_urls):
             f"""
         <div class="card">
           <h3>{badge}<a href="{r['url']}" target="_blank" rel="noopener">{title_safe}</a></h3>
-          <p>{r['price']:,} Kč &middot; {kw_text} &middot; {stk_text}</p>
+          <p>{r['price']:,} Kč &middot; {kw_text} &middot; STK mentioned</p>
         </div>"""
         )
 
