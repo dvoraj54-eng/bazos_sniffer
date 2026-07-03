@@ -7,7 +7,9 @@ light, powerful (or formerly powerful/sporty) budget-racing candidates:
 
   - price between MIN_PRICE_CZK and MAX_PRICE_CZK
   - power >= MIN_KW, where detectable from the free-text ad (kW or PS)
-  - STK (technical inspection) must be mentioned in the ad text
+  - flags whether STK (technical inspection) is mentioned at all
+    (informational only -- not a hard filter, since many legit ads
+    just don't happen to mention the word)
 
 Bazos doesn't expose power/mileage/year as search filters, so this pulls
 the raw listing pages and does all filtering itself via regex on the ad
@@ -52,7 +54,7 @@ MIN_KW = 80
 TARGET_HITS = 20  # keep scanning deeper pages until we find this many
                    # matches WITH a detected power figure (power-unknown
                    # matches are still kept/shown, just don't count here)
-MAX_PAGES = 150  # hard safety cap (150 pages = ~3000 ads) so a filter-starved
+MAX_PAGES = 800  # hard safety cap (800 pages = ~16000 ads) so a filter-starved
                   # day can't turn into an unbounded scan
 BASE_URL = "https://auto.bazos.cz"
 SEEN_FILE = Path("data/seen.json")
@@ -145,10 +147,7 @@ def evaluate_listing(item):
         return None
     item["price"] = price
     item["kw"] = kw
-    stk_mentioned = has_stk_mention(item["raw_text"])
-    if not stk_mentioned:
-        return None
-    item["stk_mentioned"] = stk_mentioned
+    item["stk_mentioned"] = has_stk_mention(item["raw_text"])
     return item
 
 
@@ -229,13 +228,14 @@ def render_html(results, new_urls):
     def render_card(r):
         badge = "🆕 " if r["url"] in new_urls else ""
         kw_text = f"{r['kw']} kW" if r["kw"] else "power unknown — check ad"
+        stk_text = "STK mentioned" if r["stk_mentioned"] else "⚠️ no STK mention"
         title_safe = (
             r["title"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         )
         return f"""
         <div class="card">
           <h3>{badge}<a href="{r['url']}" target="_blank" rel="noopener">{title_safe}</a></h3>
-          <p>{r['price']:,} Kč &middot; {kw_text} &middot; STK mentioned</p>
+          <p>{r['price']:,} Kč &middot; {kw_text} &middot; {stk_text}</p>
         </div>"""
 
     sections = ""

@@ -9,7 +9,7 @@ publishes the results as a page you can bookmark and open every morning.
 - A GitHub Actions job runs once a day (06:00 UTC).
 - It fetches the newest ~300 listings from auto.bazos.cz.
 - It filters by price and detected power (regex on the free-text ad —
-  bazos has no structured power field), and requires "STK" to be
+  bazos has no structured power field), and flags whether "STK" is
   mentioned.
 - It writes `docs/index.html` and commits it back to the repo.
 - GitHub Pages serves that file at a stable URL you just open in your
@@ -67,20 +67,19 @@ MIN_PRICE_CZK = 15_000   # floor price in Kč (filters out parts-only/junk ads)
 MAX_PRICE_CZK = 30_000   # ceiling price in Kč
 MIN_KW = 80               # minimum power, only enforced when detectable
 TARGET_HITS = 20          # keep scanning until this many *power-mentioned* matches are found
-MAX_PAGES = 150           # hard safety cap (150 pages ≈ 3000 ads) in case matches are rare
+MAX_PAGES = 800            # hard safety cap (800 pages ≈ 16000 ads) in case matches are rare
 ```
 
 The scan now stops as soon as it finds `TARGET_HITS` ads that have a
 detected power figure (kW/PS mentioned in the text), rather than
-scanning a fixed number of pages every time. Ads with STK+price match
-but no detectable power figure are still collected and shown in their
-own "power unknown" section — they just don't count toward the target.
-On a day with lots of power-labeled matches near the top it'll be a
-short, fast run; on a slow day it'll dig deeper (up to `MAX_PAGES`) to
-try to reach 20. If it hits the
-`MAX_PAGES` cap without reaching the target, the Action log will say so
-— that's a signal the filters are tight relative to what's currently
-listed, not a bug.
+scanning a fixed number of pages every time. Ads within the price band
+but with no detectable power figure are still collected and shown in
+their own "power unknown" section — they just don't count toward the
+target. On a day with lots of power-labeled matches near the top it'll
+be a short, fast run; on a slow day it'll dig deeper (up to
+`MAX_PAGES`) to try to reach 20. If it hits the `MAX_PAGES` cap without
+reaching the target, the Action log will say so — that's a signal the
+filters are tight relative to what's currently listed, not a bug.
 
 Commit the change — the next scheduled run (or a manual "Run workflow")
 picks it up.
@@ -90,12 +89,10 @@ picks it up.
 - **Power/STK/mileage/year are free-text guesses.** Bazos doesn't
   expose these as structured search fields, so the script regex-matches
   patterns like "80kW" or "STK" in the ad text. It will miss ads that
-  phrase things unusually. STK is now a **hard filter** — an ad must
-  contain the word "STK" somewhere to show up at all, which means it
-  doesn't verify a valid/current inspection date, only that the seller
-  mentioned STK at all, and it will silently exclude genuinely legit
-  cars whose ad just didn't happen to use that word.
-- **Scans until it finds 20 matches, or gives up after ~3000 ads.**
+  phrase things unusually, and "STK mentioned" just means the word
+  appears — it doesn't confirm validity dates. Always click through.
+- **Scans until it finds 20 power-mentioned matches, or gives up after
+  ~16000 ads.**
   It no longer scans a fixed number of pages — it keeps going deeper
   into the listings until it hits `TARGET_HITS` matches or the
   `MAX_PAGES` safety cap, whichever comes first. This means run time
